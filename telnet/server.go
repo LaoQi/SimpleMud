@@ -1,4 +1,4 @@
-package mud
+package telnet
 
 import (
 	"log"
@@ -8,7 +8,7 @@ import (
 type Server struct {
 	Address  *net.TCPAddr
 	Listener *net.TCPListener
-	World    *World
+	AcceptHandler func(conn *net.TCPConn)
 }
 
 func (s *Server) loop() error {
@@ -19,7 +19,7 @@ func (s *Server) loop() error {
 			log.Println(err)
 			continue
 		}
-		go s.World.Login(NewConn(conn))
+		go s.AcceptHandler(conn)
 	}
 }
 
@@ -32,13 +32,13 @@ func (s *Server) Run() error {
 	return s.loop()
 }
 
-func NewServer(world *World, port int) *Server {
+func NewServer(port int, acceptHandler func(conn *net.TCPConn)) *Server {
 	return &Server{
 		Address: &net.TCPAddr{
 			IP:   nil,
 			Port: port,
 			Zone: "",
 		},
-		World: world,
+		AcceptHandler:acceptHandler,
 	}
 }

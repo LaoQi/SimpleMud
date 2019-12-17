@@ -1,31 +1,33 @@
 package mud
 
 import (
+	"fmt"
 	"log"
 	"sync"
-	"time"
 )
 
 type World struct {
 	Messages  chan *Message
 	PlayerMap sync.Map
+	Count int
 }
 
 func (w *World) Welcome(conn *Conn) {
-	log.Printf("%v connect", conn.GetID())
-	_ = conn.Send([]byte(WelcomeText))
+	log.Printf("%v connect", conn.GetRemoteAddr())
+	conn.SendChan <- []byte(WelcomeText)
 }
 
 func (w *World) Login(conn *Conn) {
 	w.Welcome(conn)
-	_ = conn.Send([]byte("Your name: "))
+	conn.SendChan <- []byte("Your name: ")
 
 	select {
 	case name := <-conn.RecvChan:
-		player := NewPlayer(w.Messages, conn, string(name))
-		w.PlayerMap.Store(conn.GetID(), player)
+		player := NewPlayer(w.Messages, conn, conn.GetRemoteAddr(), string(name))
+		w.PlayerMap.Store(player.GetID(), player)
 
-		log.Printf("%s %s join the game!", conn.GetID(), string(name))
+		w.Count += 1
+		log.Printf("%s %s join the game!", conn.GetRemoteAddr(), string(name))
 	}
 }
 
@@ -33,6 +35,7 @@ func (w *World) Logout(id string) {
 	if player, exist := w.PlayerMap.Load(id); exist {
 		log.Printf("%s %s leave the game!", id, player.(*Player).Name)
 		w.PlayerMap.Delete(id)
+		w.Count -= 1
 	}
 }
 
@@ -41,11 +44,20 @@ func (w *World) dispatcher(msg *Message) {
 	case LeaveMsg:
 		id := msg.Value.(string)
 		w.Logout(id)
+	case SystemInfoMsg:
+		id := msg.Value.(string)
+		w.systemInfo(id)
 	}
 }
 
 func (w *World) broadcast() {
 
+}
+
+func (w *World) systemInfo(playerID string) {
+	if player, ok := w.PlayerMap.Load(playerID); ok {
+		player.(*Player).Conn.SendChan <- []byte(fmt.Sprintf("World : total player %d\n", w.Count))
+	}
 }
 
 func (w *World) Start() {
@@ -59,18 +71,14 @@ func (w *World) Start() {
 		}
 	}()
 	go func() {
-		for {
-			time.Sleep(time.Second * 3)
-			w.PlayerMap.Range(func(key, value interface{}) bool {
-				player := value.(*Player)
-				err := player.Conn.Send([]byte("World\n"))
-				if err != nil {
-					log.Printf("World Broadcast error: %s", err)
-					return false
-				}
-				return true
-			})
-		}
+		//for {
+		//	time.Sleep(time.Second * 3)
+		//	w.PlayerMap.Range(func(key, value interface{}) bool {
+		//		player := value.(*Player)
+		//		player.Conn.SendChan <- []byte(fmt.Sprintf("World : total player %d\n", w.Count))
+		//		return true
+		//	})
+		//}
 	}()
 }
 
